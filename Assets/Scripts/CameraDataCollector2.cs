@@ -13,6 +13,11 @@ public class CameraDataCollector2 : MonoBehaviour
     private bool isCameraRunning;
     public TMPro.TextMeshProUGUI t;
 
+    private void Awake()
+    {
+        webCamTexture = new WebCamTexture(WebCamTexture.devices[0].name, 640, 480, 30);
+    }
+
     public void StartCamera()
     {
         if (!isCameraRunning) 
@@ -41,7 +46,7 @@ public class CameraDataCollector2 : MonoBehaviour
         if (t != null) t.text += "\nBefore CaptureImageCoroutine";
         Debug.Log("Before CaptureImageCoroutine");
 
-        float timeout = 5f;
+        float timeout = 10f; // Increased timeout
         float elapsed = 0f;
         while (!webCamTexture.isPlaying && elapsed < timeout)
         {
@@ -58,10 +63,14 @@ public class CameraDataCollector2 : MonoBehaviour
             yield break;
         }
 
+        // Wait for a few frames to ensure valid data
+        for (int i = 0; i < 3; i++)
+        {
+            yield return new WaitForEndOfFrame();
+        }
+
         if (t != null) t.text += "\nCaptureImageCoroutine";
         Debug.Log("CaptureImageCoroutine - Webcam is playing");
-
-        yield return new WaitForEndOfFrame();
 
         int width = webCamTexture.width;
         int height = webCamTexture.height;
@@ -74,9 +83,31 @@ public class CameraDataCollector2 : MonoBehaviour
         capturedImage.SetPixels(webCamTexture.GetPixels());
         capturedImage.Apply();
 
+        // Validate image (check if it's mostly black)
+        if (IsImageBlack(capturedImage))
+        {
+            if (t != null) t.text += "\nCaptured image is black! Retrying...";
+            Debug.LogWarning("Captured image is black! Retrying...");
+            yield return new WaitForSeconds(0.5f);
+            yield return CaptureImage(); // Retry
+            yield break;
+        }
+
         if (t != null) t.text += "\nImage captured and invoking OnImageCaptured";
         Debug.Log("Image captured and invoking OnImageCaptured");
         OnImageCaptured?.Invoke(capturedImage);
+    }
+
+    private bool IsImageBlack(Texture2D image)
+    {
+        Color[] pixels = image.GetPixels();
+        float totalBrightness = 0f;
+        for (int i = 0; i < pixels.Length; i += 10) // Sample every 10th pixel
+        {
+            totalBrightness += pixels[i].grayscale;
+        }
+        float averageBrightness = totalBrightness / (pixels.Length / 10f);
+        return averageBrightness < 0.05f; // Threshold for "black" image
     }
 
     public void StartCapturing()
